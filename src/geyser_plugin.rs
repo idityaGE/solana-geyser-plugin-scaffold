@@ -1,25 +1,21 @@
 use {
-    crate::thread_safe_logger::ThreadSafeLogger,
+    crate::structured_logger::StructuredLogger,
     agave_geyser_plugin_interface::geyser_plugin_interface::{
-        GeyserPlugin, GeyserPluginError, ReplicaAccountInfoVersions, ReplicaBlockInfoVersions,
+        GeyserPlugin, ReplicaAccountInfoVersions, ReplicaBlockInfoVersions,
         ReplicaTransactionInfoVersions, Result as GeyserPluginResult, SlotStatus,
     },
     log::*,
     serde::{Deserialize, Serialize},
-    std::{fs::File, io::Read, sync::Arc, sync::RwLock},
+    std::{fs::File, io::Read},
 };
 
 pub struct GeyserPluginHook {
     config: Option<GeyserPluginConfig>,
-    logger: Arc<RwLock<Option<ThreadSafeLogger>>>,
 }
 
 impl Default for GeyserPluginHook {
     fn default() -> Self {
-        Self {
-            config: None,
-            logger: Arc::new(RwLock::new(None)),
-        }
+        Self { config: None }
     }
 }
 
@@ -58,32 +54,16 @@ impl GeyserPlugin for GeyserPluginHook {
         if let Some(config) = &self.config {
             info!("[on_load] - output_file: {:#?}", config.output_file);
 
-            if let Some(output_file) = &config.output_file {
-                match ThreadSafeLogger::new(output_file) {
-                    Ok(logger) => {
-                        logger.log(
-                            "plugin_loaded",
-                            None,
-                            serde_json::json!({
-                                "config_file": config_file,
-                                "config": config
-                            }),
-                        );
+            StructuredLogger::log(
+                "plugin_loaded",
+                None,
+                serde_json::json!({
+                    "config_file": config_file,
+                    "config": config
+                }),
+            );
 
-                        if let Ok(mut logger_guard) = self.logger.write() {
-                            *logger_guard = Some(logger);
-                        }
-
-                        info!("[on_load] - Logger initialized successfully");
-                    }
-                    Err(e) => {
-                        error!("[on_load] - Failed to initialize logger: {}", e);
-                        return Err(GeyserPluginError::ConfigFileReadError {
-                            msg: format!("Failed to initialize logger: {}", e),
-                        });
-                    }
-                }
-            }
+            info!("[on_load] - Logger initialized successfully");
         }
 
         Ok(())
@@ -92,12 +72,7 @@ impl GeyserPlugin for GeyserPluginHook {
     fn on_unload(&mut self) {
         info!("[on_unload] - Starting plugin unload");
 
-        if let Ok(mut logger_guard) = self.logger.write() {
-            if let Some(mut logger) = logger_guard.take() {
-                logger.log("plugin_unloading", None, serde_json::json!({}));
-                logger.shutdown();
-            }
-        }
+        StructuredLogger::log("plugin_unloading", None, serde_json::json!({}));
 
         info!("[on_unload] - Plugin unload complete");
     }
@@ -108,20 +83,12 @@ impl GeyserPlugin for GeyserPluginHook {
         slot: Slot,
         is_startup: bool,
     ) -> GeyserPluginResult<()> {
-        if let Ok(logger_guard) = self.logger.read() {
-            if let Some(logger) = logger_guard.as_ref() {
-                logger.log_account_update(&account, slot, is_startup);
-            }
-        }
+        StructuredLogger::log_account_update(&account, slot, is_startup);
         Ok(())
     }
 
     fn notify_end_of_startup(&self) -> GeyserPluginResult<()> {
-        if let Ok(logger_guard) = self.logger.read() {
-            if let Some(logger) = logger_guard.as_ref() {
-                logger.log("startup_completed", None, serde_json::json!({}));
-            }
-        }
+        StructuredLogger::log("startup_completed", None, serde_json::json!({}));
         Ok(())
     }
 
@@ -131,11 +98,7 @@ impl GeyserPlugin for GeyserPluginHook {
         parent: Option<u64>,
         status: &SlotStatus,
     ) -> GeyserPluginResult<()> {
-        if let Ok(logger_guard) = self.logger.read() {
-            if let Some(logger) = logger_guard.as_ref() {
-                logger.log_slot_status(slot, parent, status);
-            }
-        }
+        StructuredLogger::log_slot_status(slot, parent, status);
         Ok(())
     }
 
@@ -144,20 +107,12 @@ impl GeyserPlugin for GeyserPluginHook {
         transaction: ReplicaTransactionInfoVersions,
         slot: Slot,
     ) -> GeyserPluginResult<()> {
-        if let Ok(logger_guard) = self.logger.read() {
-            if let Some(logger) = logger_guard.as_ref() {
-                logger.log_transaction(&transaction, slot);
-            }
-        }
+        StructuredLogger::log_transaction(&transaction, slot);
         Ok(())
     }
 
     fn notify_block_metadata(&self, blockinfo: ReplicaBlockInfoVersions) -> GeyserPluginResult<()> {
-        if let Ok(logger_guard) = self.logger.read() {
-            if let Some(logger) = logger_guard.as_ref() {
-                logger.log_block_metadata(&blockinfo);
-            }
-        }
+        StructuredLogger::log_block_metadata(&blockinfo);
         Ok(())
     }
 

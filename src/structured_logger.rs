@@ -5,18 +5,8 @@ use {
     },
     bs58,
     chrono::{DateTime, Utc},
-    log::error,
+    log::info,
     serde::{Deserialize, Serialize},
-    std::{
-        fs::OpenOptions,
-        io::{BufWriter, Write},
-        sync::{
-            Arc, Mutex,
-            mpsc::{self, Sender},
-        },
-        thread::{self, JoinHandle},
-        time::Duration,
-    },
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -27,111 +17,23 @@ pub struct LogEntry {
     pub data: serde_json::Value,
 }
 
-pub struct ThreadSafeLogger {
-    sender: Option<Sender<LogEntry>>,
-    thread_handle: Option<Arc<Mutex<Option<JoinHandle<()>>>>>,
-}
+pub struct StructuredLogger;
 
-impl Clone for ThreadSafeLogger {
-    fn clone(&self) -> Self {
-        ThreadSafeLogger {
-            sender: self.sender.clone(),
-            thread_handle: self.thread_handle.clone(),
-        }
-    }
-}
+impl StructuredLogger {
+    pub fn log(event_type: &str, slot: Option<u64>, data: serde_json::Value) {
+        let entry = LogEntry {
+            timestamp: Utc::now(),
+            event_type: event_type.to_string(),
+            slot,
+            data,
+        };
 
-impl Drop for ThreadSafeLogger {
-    fn drop(&mut self) {
-        self.sender.take();
-
-        if let Some(handle_arc) = &self.thread_handle {
-            if let Ok(mut handle_guard) = handle_arc.lock() {
-                if let Some(handle) = handle_guard.take() {
-                    let _ = handle.join();
-                }
-            }
-        }
-    }
-}
-
-impl ThreadSafeLogger {
-    pub fn new(output_file: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let (sender, receiver) = mpsc::channel::<LogEntry>();
-        let output_file = output_file.to_string();
-
-        let handle = thread::spawn(move || {
-            let file = match OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&output_file)
-            {
-                Ok(file) => file,
-                Err(e) => {
-                    error!("Failed to open log file {}: {}", output_file, e);
-                    return;
-                }
-            };
-
-            let mut writer = BufWriter::new(file);
-
-            loop {
-                match receiver.recv_timeout(Duration::from_millis(100)) {
-                    Ok(entry) => {
-                        if let Ok(json_line) = serde_json::to_string(&entry) {
-                            if let Err(e) = writeln!(writer, "{}", json_line) {
-                                error!("Failed to write to log file: {}", e);
-                            } else if let Err(e) = writer.flush() {
-                                error!("Failed to flush log file: {}", e);
-                            }
-                        }
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        continue;
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        break;
-                    }
-                }
-            }
-
-            let _ = writer.flush();
-        });
-
-        Ok(ThreadSafeLogger {
-            sender: Some(sender),
-            thread_handle: Some(Arc::new(Mutex::new(Some(handle)))),
-        })
-    }
-
-    pub fn shutdown(&mut self) {
-        self.sender.take();
-        if let Some(handle_arc) = &self.thread_handle {
-            if let Ok(mut handle_guard) = handle_arc.lock() {
-                if let Some(handle) = handle_guard.take() {
-                    let _ = handle.join();
-                }
-            }
-        }
-    }
-
-    pub fn log(&self, event_type: &str, slot: Option<u64>, data: serde_json::Value) {
-        if let Some(sender) = &self.sender {
-            let entry = LogEntry {
-                timestamp: Utc::now(),
-                event_type: event_type.to_string(),
-                slot,
-                data,
-            };
-
-            if let Err(e) = sender.send(entry) {
-                error!("Failed to send log entry to background thread: {}", e);
-            }
+        if let Ok(json_line) = serde_json::to_string(&entry) {
+            info!("{}", json_line);
         }
     }
 
     pub fn log_account_update(
-        &self,
         account: &ReplicaAccountInfoVersions,
         slot: u64,
         is_startup: bool,
@@ -170,10 +72,10 @@ impl ThreadSafeLogger {
             }
         };
 
-        self.log("account_update", Some(slot), data);
+        Self::log("account_update", Some(slot), data);
     }
 
-    pub fn log_transaction(&self, transaction: &ReplicaTransactionInfoVersions, slot: u64) {
+    pub fn log_transaction(transaction: &ReplicaTransactionInfoVersions, slot: u64) {
         let data = match transaction {
             ReplicaTransactionInfoVersions::V0_0_1(tx) => {
                 serde_json::json!({
@@ -203,10 +105,10 @@ impl ThreadSafeLogger {
             }
         };
 
-        self.log("transaction", Some(slot), data);
+        Self::log("transaction", Some(slot), data);
     }
 
-    pub fn log_block_metadata(&self, blockinfo: &ReplicaBlockInfoVersions) {
+    pub fn log_block_metadata(blockinfo: &ReplicaBlockInfoVersions) {
         let (data, slot) = match blockinfo {
             ReplicaBlockInfoVersions::V0_0_1(block) => (
                 serde_json::json!({
@@ -251,15 +153,15 @@ impl ThreadSafeLogger {
             ),
         };
 
-        self.log("block_metadata", Some(slot), data);
+        Self::log("block_metadata", Some(slot), data);
     }
 
-    pub fn log_slot_status(&self, slot: u64, parent: Option<u64>, status: &SlotStatus) {
+    pub fn log_slot_status(slot: u64, parent: Option<u64>, status: &SlotStatus) {
         let data = serde_json::json!({
             "parent": parent,
             "status": format!("{:?}", status)
         });
 
-        self.log("slot_status", Some(slot), data);
+        Self::log("slot_status", Some(slot), data);
     }
 }
