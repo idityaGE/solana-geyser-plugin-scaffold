@@ -33,11 +33,7 @@ impl StructuredLogger {
         }
     }
 
-    pub fn log_account_update(
-        account: &ReplicaAccountInfoVersions,
-        slot: u64,
-        is_startup: bool,
-    ) {
+    pub fn log_account_update(account: &ReplicaAccountInfoVersions, slot: u64, is_startup: bool) {
         let data = match account {
             ReplicaAccountInfoVersions::V0_0_1(_) => {
                 serde_json::json!({
@@ -78,28 +74,34 @@ impl StructuredLogger {
     pub fn log_transaction(transaction: &ReplicaTransactionInfoVersions, slot: u64) {
         let data = match transaction {
             ReplicaTransactionInfoVersions::V0_0_1(tx) => {
+                let signature_str = bs58::encode(tx.signature.as_ref()).into_string();
+
                 serde_json::json!({
                     "version": "V0_0_1",
-                    "signature": bs58::encode(&tx.signature).into_string(),
+                    "signature": signature_str,
                     "is_vote": tx.is_vote,
-                    "transaction_status_meta": format!("{:?}", tx.transaction_status_meta)
+                    "transaction_logged": true
                 })
             }
             ReplicaTransactionInfoVersions::V0_0_2(tx) => {
+                let signature_str = bs58::encode(tx.signature.as_ref()).into_string();
+
                 serde_json::json!({
                     "version": "V0_0_2",
-                    "signature": bs58::encode(&tx.signature).into_string(),
+                    "signature": signature_str,
                     "is_vote": tx.is_vote,
-                    "transaction_status_meta": format!("{:?}", tx.transaction_status_meta),
+                    "transaction_logged": true,
                     "index": tx.index
                 })
             }
             ReplicaTransactionInfoVersions::V0_0_3(tx) => {
+                let signature_str = bs58::encode(tx.signature.as_ref()).into_string();
+
                 serde_json::json!({
                     "version": "V0_0_3",
-                    "signature": bs58::encode(&tx.signature).into_string(),
+                    "signature": signature_str,
                     "is_vote": tx.is_vote,
-                    "transaction_status_meta": format!("{:?}", tx.transaction_status_meta),
+                    "transaction_logged": true,
                     "index": tx.index
                 })
             }
