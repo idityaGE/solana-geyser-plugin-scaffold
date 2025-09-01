@@ -8,28 +8,18 @@ The Solana Geyser plugin interface lets external libraries receive real-time not
 
 ## This repo
 
-- Source: Rust plugin scaffold in `src/`.
-- Example plugin config: `geyser-plugin.json` (points to the built library and contains plugin-specific configuration).
+It has two implementations of the Geyser plugin:
 
-By default the included `geyser-plugin.json` points at (example):
-
-```
-{
-	"libpath": "/home/idityage/github_repos/solana-geyser-plugin-scaffold/target/release/libsolana_geyser_plugin_scaffold.so",
-	"config": {
-		"output_file": "/tmp/geyser_plugin.txt"
-	}
-}
-```
-
-Important: replace the `libpath` value with the absolute path to the library file produced by your build. Example library filenames by OS are described below.
+- `master` branch: a minimal example plugin.
+- `logger_impl` branch: with an external logger file.
 
 ## Quickstart — build and run locally
 
 Prerequisites:
 
 - Rust toolchain (stable) and `cargo`.
-- Solana `solana-test-validator` available on PATH (from Solana toolchain).
+- Solana `solana-test-validator` available on PATH (from Solana toolchain/CLI).
+- linux or macOS or WSL (Windows Subsystem for Linux)
 
 1. Build the plugin (release):
 
@@ -45,11 +35,11 @@ ls -l target/release/libsolana_geyser_plugin_scaffold.so
 
 3. Start the test validator with the plugin config from the repo root:
 
+> Note: Make sure you have correct path to the built library in `libpath`.
+
 ```bash
 solana-test-validator --geyser-plugin-config geyser-plugin.json
 ```
-
-The validator will load the plugin `.so` and the plugin will use the `config` section from `geyser-plugin.json`
 
 If you get errors that the plugin cannot be found, open `geyser-plugin.json` and set `libpath` to the absolute path of the library file you built.
 
@@ -71,28 +61,17 @@ To follow validator logs in real time:
 tail -f test-ledger/validator.log
 ```
 
-## Troubleshooting
+## References
 
-- Plugin not loaded / validator errors:
-  - Check `libpath` in `geyser-plugin.json` is absolute and the `.so` exists.
-  - Ensure the `.so` is readable by the user running the validator.
-- Nothing appears in the plugin output file:
-  - Confirm the validator started without errors and processed some slots/transactions.
-- Building fails:
-  - Ensure you have a current Rust toolchain and linker setup for building shared libraries on Linux.
+- [Anza Docs on Geyser Plugin](https://docs.anza.xyz/validator/geyser)
 
-## Library file names by OS
+### Examples Plugin Implementations
 
-- Linux: the build will typically produce a `.so` shared library (for example `target/release/libsolana_geyser_plugin_scaffold.so`). Use that file path in `libpath`.
-- macOS: Rust will produce a `.dylib` dynamic library. Update `libpath` to point to the generated `.dylib` file.
-- Windows: validators expect Unix-style shared libraries; building and testing a Geyser plugin on native Windows is uncommon. Use WSL (Windows Subsystem for Linux) to build a `.so` and run `solana-test-validator` from WSL if you need local testing on Windows.
-
-## Development notes
-
-- The Rust code for the plugin lives in `src/`. The entrypoints follow the Solana Geyser plugin ABI and the scaffold writes simple, human-readable messages to the configured `output_file` for received callbacks.
-- Small changes to the ABI or function signatures must match the validator's expectations. See Solana docs for Geyser plugin ABI and callback semantics.
-
-If you'd like, I can also:
-
-- Add a small script `scripts/run-local.sh` that builds and launches `solana-test-validator` with the config.
-- Add a minimal `CONTRIBUTING.md` or expand the README with examples of parsing the plugin output.
+- [A PostgreSQL Plugin](https://github.com/solana-labs/solana-accountsdb-plugin-postgres)
+- [A Plugin Sending to a gRPC Service](https://github.com/ckamm/solana-accountsdb-connector)
+- [A RabbitMQ Producer Plugin](https://github.com/holaplex/indexer-geyser-plugin)
+- [A Complete Architecture Around The Geyser Plugin](https://github.com/holaplex/indexer)
+- [A Kafka Producer Plugin](https://github.com/Blockdaemon/solana-accountsdb-plugin-kafka)
+- [An Amazon SQS Plugin](https://github.com/rpcpool/solana-accountsdb-sqs)
+- [A Google BigTable Plugin](https://github.com/lijunwangs/solana-accountsdb-plugin-bigtable)
+- [A Creative Way To Use The Geyser Plugin](https://github.com/clockwork-xyz/clockwork)

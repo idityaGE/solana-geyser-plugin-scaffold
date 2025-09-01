@@ -71,6 +71,7 @@ impl StructuredLogger {
         Self::log("account_update", Some(slot), data);
     }
 
+    /// this func has wasted my 6 hours (it was throwing segmentation fault)
     pub fn log_transaction(transaction: &ReplicaTransactionInfoVersions, slot: u64) {
         let data = match transaction {
             ReplicaTransactionInfoVersions::V0_0_1(tx) => {
