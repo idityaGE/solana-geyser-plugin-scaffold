@@ -10,8 +10,12 @@ use {
     std::{
         fs::OpenOptions,
         io::{BufWriter, Write},
-        sync::mpsc::{self, Sender},
-        thread,
+        sync::{
+            Arc, Mutex,
+            mpsc::{self, Sender},
+        },
+        thread::{self, JoinHandle},
+        time::Duration,
     },
 };
 
@@ -23,9 +27,32 @@ pub struct LogEntry {
     pub data: serde_json::Value,
 }
 
-#[derive(Clone)]
 pub struct ThreadSafeLogger {
-    sender: Sender<LogEntry>,
+    sender: Option<Sender<LogEntry>>,
+    thread_handle: Option<Arc<Mutex<Option<JoinHandle<()>>>>>,
+}
+
+impl Clone for ThreadSafeLogger {
+    fn clone(&self) -> Self {
+        ThreadSafeLogger {
+            sender: self.sender.clone(),
+            thread_handle: self.thread_handle.clone(),
+        }
+    }
+}
+
+impl Drop for ThreadSafeLogger {
+    fn drop(&mut self) {
+        self.sender.take();
+
+        if let Some(handle_arc) = &self.thread_handle {
+            if let Ok(mut handle_guard) = handle_arc.lock() {
+                if let Some(handle) = handle_guard.take() {
+                    let _ = handle.join();
+                }
+            }
+        }
+    }
 }
 
 impl ThreadSafeLogger {
@@ -33,7 +60,7 @@ impl ThreadSafeLogger {
         let (sender, receiver) = mpsc::channel::<LogEntry>();
         let output_file = output_file.to_string();
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             let file = match OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -48,30 +75,58 @@ impl ThreadSafeLogger {
 
             let mut writer = BufWriter::new(file);
 
-            while let Ok(entry) = receiver.recv() {
-                if let Ok(json_line) = serde_json::to_string(&entry) {
-                    if let Err(e) = writeln!(writer, "{}", json_line) {
-                        error!("Failed to write to log file: {}", e);
-                    } else if let Err(e) = writer.flush() {
-                        error!("Failed to flush log file: {}", e);
+            loop {
+                match receiver.recv_timeout(Duration::from_millis(100)) {
+                    Ok(entry) => {
+                        if let Ok(json_line) = serde_json::to_string(&entry) {
+                            if let Err(e) = writeln!(writer, "{}", json_line) {
+                                error!("Failed to write to log file: {}", e);
+                            } else if let Err(e) = writer.flush() {
+                                error!("Failed to flush log file: {}", e);
+                            }
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        continue;
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        break;
                     }
                 }
             }
+
+            let _ = writer.flush();
         });
 
-        Ok(ThreadSafeLogger { sender })
+        Ok(ThreadSafeLogger {
+            sender: Some(sender),
+            thread_handle: Some(Arc::new(Mutex::new(Some(handle)))),
+        })
+    }
+
+    pub fn shutdown(&mut self) {
+        self.sender.take();
+        if let Some(handle_arc) = &self.thread_handle {
+            if let Ok(mut handle_guard) = handle_arc.lock() {
+                if let Some(handle) = handle_guard.take() {
+                    let _ = handle.join();
+                }
+            }
+        }
     }
 
     pub fn log(&self, event_type: &str, slot: Option<u64>, data: serde_json::Value) {
-        let entry = LogEntry {
-            timestamp: Utc::now(),
-            event_type: event_type.to_string(),
-            slot,
-            data,
-        };
+        if let Some(sender) = &self.sender {
+            let entry = LogEntry {
+                timestamp: Utc::now(),
+                event_type: event_type.to_string(),
+                slot,
+                data,
+            };
 
-        if let Err(e) = self.sender.send(entry) {
-            error!("Failed to send log entry to background thread: {}", e);
+            if let Err(e) = sender.send(entry) {
+                error!("Failed to send log entry to background thread: {}", e);
+            }
         }
     }
 
