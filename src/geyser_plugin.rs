@@ -1,9 +1,9 @@
 use {
+    crate::thread_safe_logger::ThreadSafeLogger,
     agave_geyser_plugin_interface::geyser_plugin_interface::{
         GeyserPlugin, GeyserPluginError, ReplicaAccountInfoVersions, ReplicaBlockInfoVersions,
         ReplicaTransactionInfoVersions, Result as GeyserPluginResult, SlotStatus,
     },
-    bs58,
     log::*,
     serde::{Deserialize, Serialize},
     std::{fs::File, io::Read},
@@ -12,6 +12,7 @@ use {
 #[derive(Default)]
 pub struct GeyserPluginHook {
     config: Option<GeyserPluginConfig>,
+    logger: Option<ThreadSafeLogger>,
 }
 
 impl std::fmt::Debug for GeyserPluginHook {
@@ -20,7 +21,6 @@ impl std::fmt::Debug for GeyserPluginHook {
     }
 }
 
-// --- plugin config ---
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
 pub struct GeyserPluginConfig {
     pub output_file: Option<String>,
@@ -49,6 +49,31 @@ impl GeyserPlugin for GeyserPluginHook {
 
         if let Some(config) = &self.config {
             info!("[on_load] - output_file: {:#?}", config.output_file);
+
+            if let Some(output_file) = &config.output_file {
+                match ThreadSafeLogger::new(output_file) {
+                    Ok(logger) => {
+                        self.logger = Some(logger.clone());
+
+                        logger.log(
+                            "plugin_loaded",
+                            None,
+                            serde_json::json!({
+                                "config_file": config_file,
+                                "config": config
+                            }),
+                        );
+
+                        info!("[on_load] - Logger initialized successfully");
+                    }
+                    Err(e) => {
+                        error!("[on_load] - Failed to initialize logger: {}", e);
+                        return Err(GeyserPluginError::ConfigFileReadError {
+                            msg: format!("Failed to initialize logger: {}", e),
+                        });
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -64,40 +89,16 @@ impl GeyserPlugin for GeyserPluginHook {
         slot: Slot,
         is_startup: bool,
     ) -> GeyserPluginResult<()> {
-        match account {
-            ReplicaAccountInfoVersions::V0_0_1(_) => {
-                return Err(GeyserPluginError::AccountsUpdateError {
-                    msg: "ReplicaAccountInfoVersions::V0_0_1 it not supported".to_string(),
-                });
-            }
-            ReplicaAccountInfoVersions::V0_0_2(account) => {
-                let acc = format!(
-                    "pubkey: {}, owner: {}",
-                    bs58::encode(account.pubkey).into_string(),
-                    bs58::encode(account.owner).into_string(),
-                );
-                info!(
-                    "[update_account V0_0_2] - account: {:#?}, slot:{:#?}, is_startup:{:#?}",
-                    acc, slot, is_startup
-                );
-            }
-            ReplicaAccountInfoVersions::V0_0_3(account) => {
-                let acc = format!(
-                    "pubkey: {}, owner: {}",
-                    bs58::encode(account.pubkey).into_string(),
-                    bs58::encode(account.owner).into_string(),
-                );
-                info!(
-                    "[update_account V0_0_3] - account: {:#?}, slot:{:#?}, is_startup:{:#?}",
-                    acc, slot, is_startup
-                );
-            }
+        if let Some(logger) = &self.logger {
+            logger.log_account_update(&account, slot, is_startup);
         }
         Ok(())
     }
 
     fn notify_end_of_startup(&self) -> GeyserPluginResult<()> {
-        info!("[notify_end_of_startup]");
+        if let Some(logger) = &self.logger {
+            logger.log("startup_completed", None, serde_json::json!({}));
+        }
         Ok(())
     }
 
@@ -107,10 +108,9 @@ impl GeyserPlugin for GeyserPluginHook {
         parent: Option<u64>,
         status: &SlotStatus,
     ) -> GeyserPluginResult<()> {
-        info!(
-            "[update_slot_status], slot:{:#?}, parent:{:#?}, status:{:#?}",
-            slot, parent, status
-        );
+        if let Some(logger) = &self.logger {
+            logger.log_slot_status(slot, parent, status);
+        }
         Ok(())
     }
 
@@ -119,55 +119,15 @@ impl GeyserPlugin for GeyserPluginHook {
         transaction: ReplicaTransactionInfoVersions,
         slot: Slot,
     ) -> GeyserPluginResult<()> {
-        match transaction {
-            ReplicaTransactionInfoVersions::V0_0_1(transaction_info) => {
-                info!(
-                    "[notify_transaction], transaction:{:#?}, slot:{:#?}",
-                    transaction_info.is_vote, slot
-                );
-            }
-            ReplicaTransactionInfoVersions::V0_0_2(transaction_info) => {
-                info!(
-                    "[notify_transaction], transaction:{:#?}, slot:{:#?}",
-                    transaction_info.is_vote, slot
-                );
-            }
-            ReplicaTransactionInfoVersions::V0_0_3(transaction_info) => {
-                info!(
-                    "[notify_transaction], transaction:{:#?}, slot:{:#?}",
-                    transaction_info.is_vote, slot
-                );
-            }
+        if let Some(logger) = &self.logger {
+            logger.log_transaction(&transaction, slot);
         }
         Ok(())
     }
 
     fn notify_block_metadata(&self, blockinfo: ReplicaBlockInfoVersions) -> GeyserPluginResult<()> {
-        match blockinfo {
-            ReplicaBlockInfoVersions::V0_0_1(blockinfo) => {
-                info!(
-                    "[notify_block_metadata V0_0_1], block_info:{:#?}",
-                    blockinfo
-                );
-            }
-            ReplicaBlockInfoVersions::V0_0_2(blockinfo) => {
-                info!(
-                    "[notify_block_metadata V0_0_2], block_info:{:#?}",
-                    blockinfo
-                );
-            }
-            ReplicaBlockInfoVersions::V0_0_3(blockinfo) => {
-                info!(
-                    "[notify_block_metadata V0_0_3], block_info:{:#?}",
-                    blockinfo
-                );
-            }
-            ReplicaBlockInfoVersions::V0_0_4(blockinfo) => {
-                info!(
-                    "[notify_block_metadata V0_0_4], block_info:{:#?}",
-                    blockinfo
-                );
-            }
+        if let Some(logger) = &self.logger {
+            logger.log_block_metadata(&blockinfo);
         }
         Ok(())
     }

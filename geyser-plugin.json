@@ -1,5 +1,5 @@
 {
-  "libpath": "/home/idityage/experiments/my-geyser-plugin/target/release/libmy_geyser_plugin.so",
+  "libpath": "/home/idityage/github_repos/solana-geyser-plugin-scaffold/target/release/libsolana_geyser_plugin_scaffold.so", 
   "config": {
     "output_file": "/tmp/geyser_plugin.txt"
   }
