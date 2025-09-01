@@ -1,0 +1,6 @@
+{
+  "libpath": "/home/idityage/experiments/my-geyser-plugin/target/release/libmy_geyser_plugin.so",
+  "config": {
+    "output_file": "/tmp/geyser_plugin.txt"
+  }
+}
